@@ -111,7 +111,7 @@ export const AutoBotController = () => {
 
   const addLog = (msg: string) => {
     const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-    setLogs(prev => [`[${time}] ${msg}`, ...prev].slice(0, 20));
+    setLogs(prev => [`[${time}] ${msg}`, ...prev].slice(0, 50));
   };
 
   const handleLogout = () => {
@@ -137,20 +137,22 @@ export const AutoBotController = () => {
       if (res && res.ok) {
         const data = await res.json();
         token = data.jwt;
+      } else if (res && res.status === 401) {
+        const data = await res.json();
+        throw new Error(data.error || 'Authentication failed');
       } else {
-        console.warn('Backend unavailable or error, using mock authentication');
-        token = 'mock-jwt-token-' + Date.now();
+        console.warn('Backend connection error, checking if available...');
+        throw new Error('Could not connect to Trading Engine. Please check your Railway deployment.');
       }
       
       if (token) {
         setJwt(token);
         addLog(`Successfully authenticated (${accountType} mode).`);
         fetchBalance(token, accountType);
-      } else {
-        throw new Error('No token received');
       }
     } catch (err: any) {
       setLoginError(err.message || 'Failed to login');
+      addLog(`Login Error: ${err.message}`);
     } finally {
       setIsLoggingIn(false);
     }
@@ -164,11 +166,14 @@ export const AutoBotController = () => {
       if (res && res.ok) {
         const text = await res.text();
         setTestResult(`Success: ${text}`);
+        addLog(`Engine Connection Verified: ${text}`);
       } else {
         setTestResult(`Failed: ${res?.status || 'Network Error'}`);
+        addLog(`Engine Connection Failed: ${res?.status || 'Network Error'}`);
       }
     } catch (err: any) {
       setTestResult(`Error: ${err.message}`);
+      addLog(`Engine Connection Error: ${err.message}`);
     } finally {
       setIsTesting(false);
     }
@@ -183,12 +188,14 @@ export const AutoBotController = () => {
       if (res && res.ok) {
         const data = await res.json();
         setBalance(data.balance);
+        addLog(`Balance synchronized: $${data.balance.toLocaleString()}`);
       } else {
-        setBalance(type === 'demo' ? 10000.00 : 0.00); 
+        setBalance(null);
+        addLog(`Warning: Could not fetch ${type} balance from server.`);
       }
     } catch (err) {
       console.error('Failed to fetch balance', err);
-      setBalance(type === 'demo' ? 10000.00 : 0.00);
+      setBalance(null);
     }
   };
 
@@ -218,25 +225,25 @@ export const AutoBotController = () => {
     const ws = new WebSocket(wsUrl);
     wsRef.current = ws;
 
-    ws.onopen = () => addLog('Connected to Signal API.');
+    ws.onopen = () => addLog('Signal API Stream: Connected.');
     
     ws.onmessage = async (event) => {
       try {
         const signal = JSON.parse(event.data);
-        // Signal format expected: { pair: 'EURUSD-OTC', timeframe: '5m', direction: 'CALL', accuracy: 92 }
-        
+        if (signal.type === 'info') return;
+
         // Match user's custom parameters
         const matchesPair = config.pairs.includes(signal.pair);
         const matchesTimeframe = config.timeframes.includes(signal.timeframe || '1m');
         const matchesConfidence = signal.accuracy >= config.minConfidence;
 
         if (matchesPair && matchesTimeframe && matchesConfidence) {
-          addLog(`Strong ${signal.direction} signal received for ${signal.pair} (${signal.accuracy}% accuracy).`);
+          addLog(`Signal detected: ${signal.pair} ${signal.direction} (${signal.accuracy}%)`);
           
           if (isActive) {
             executeTrade(signal);
           } else {
-            addLog(`Bot inactive. Ignored ${signal.direction} signal for ${signal.pair}.`);
+            addLog(`Bot idle. Signal ignored.`);
           }
         }
       } catch (e) {
@@ -244,7 +251,7 @@ export const AutoBotController = () => {
       }
     };
 
-    ws.onclose = () => addLog('Disconnected from Signal API.');
+    ws.onclose = () => addLog('Signal API Stream: Disconnected.');
 
     return () => {
       ws.close();
@@ -254,24 +261,19 @@ export const AutoBotController = () => {
   const executeTrade = async (signal: any) => {
     // Check risk limits
     if (currentPnlRef.current <= -config.maxLoss) {
-      addLog(`Daily Stop Loss reached ($${config.maxLoss}). Stopping bot.`);
-      setIsActive(false);
-      return;
-    }
-    if (currentPnlRef.current >= config.profitTarget) {
-      addLog(`Profit target reached ($${config.profitTarget}). Stopping bot.`);
+      addLog(`Daily Stop Loss reached. Stopping bot.`);
       setIsActive(false);
       return;
     }
     if (tradesCountRef.current >= config.maxDailyTrades) {
-      addLog(`Max daily trades reached (${config.maxDailyTrades}). Stopping bot.`);
+      addLog(`Max daily trades reached. Stopping bot.`);
       setIsActive(false);
       return;
     }
 
     tradesCountRef.current += 1;
     setStats(s => ({ ...s, totalTrades: tradesCountRef.current }));
-    addLog(`Executing ${signal.direction} on ${signal.pair} with $${config.stake}...`);
+    addLog(`Executing ${signal.direction} on ${signal.pair} ($${config.stake})...`);
     
     try {
       const res = await fetch(`${API_URL}/api/trade/execute`, {
@@ -292,9 +294,9 @@ export const AutoBotController = () => {
 
       if (res.ok) {
         const result = await res.json();
-        addLog(`Trade placed successfully. ID: ${result.tradeId}`);
+        addLog(`Trade Success: ${result.tradeId}`);
+        fetchBalance(jwt!, accountType); // Refresh balance after trade
         
-        // Add to recent trades as PENDING, or use mock result if backend returns it immediately
         const newTrade: TradeRecord = {
           id: result.tradeId || Math.random().toString(36).substring(7),
           pair: signal.pair,
@@ -308,10 +310,11 @@ export const AutoBotController = () => {
         
         setRecentTrades(prev => [newTrade, ...prev].slice(0, 50));
       } else {
-        addLog(`Trade execution failed: ${res.statusText}`);
+        const data = await res.json();
+        addLog(`Trade Error: ${data.error || res.statusText}`);
       }
     } catch (err: any) {
-      addLog(`Error executing trade: ${err.message}`);
+      addLog(`Trade Execution Critical Error: ${err.message}`);
     }
   };
 
@@ -322,8 +325,8 @@ export const AutoBotController = () => {
           <div className="bg-[#131823] w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 border border-[#1e2330]">
             <Lock className="text-[#00e676]" size={32} />
           </div>
-          <h2 className="text-2xl font-bold">Connect to TradingStudio</h2>
-          <p className="text-sm text-gray-400 mt-2">Enter your IQ Option credentials to initialize the engine.</p>
+          <h2 className="text-2xl font-bold">TradingStudio Engine</h2>
+          <p className="text-sm text-gray-400 mt-2">Sign in with your IQ Option account to start automation.</p>
         </div>
 
         <div className="flex bg-[#131823] p-1 rounded-xl mb-6 border border-[#1e2330]">
@@ -332,7 +335,7 @@ export const AutoBotController = () => {
             onClick={() => setAccountType('demo')}
             className={`flex-1 py-2 rounded-lg text-sm font-bold transition ${accountType === 'demo' ? 'bg-[#00e676] text-[#0b0e14]' : 'text-gray-400'}`}
           >
-            Demo Account
+            Demo Mode
           </button>
           <button 
             type="button"
@@ -348,7 +351,7 @@ export const AutoBotController = () => {
             <Mail className="absolute left-3 top-3 text-gray-500" size={20} />
             <input 
               type="email" 
-              placeholder="Email address"
+              placeholder="IQ Option Email"
               className="w-full bg-[#131823] border border-[#1e2330] pl-10 pr-4 py-3 rounded-xl focus:border-[#00e676] outline-none transition text-white"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
@@ -359,7 +362,7 @@ export const AutoBotController = () => {
             <Key className="absolute left-3 top-3 text-gray-500" size={20} />
             <input 
               type="password" 
-              placeholder="Password"
+              placeholder="IQ Option Password"
               className="w-full bg-[#131823] border border-[#1e2330] pl-10 pr-4 py-3 rounded-xl focus:border-[#00e676] outline-none transition text-white"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
@@ -372,7 +375,7 @@ export const AutoBotController = () => {
             disabled={isLoggingIn}
             className="w-full bg-[#00e676] text-[#0b0e14] font-bold py-3 rounded-xl hover:bg-opacity-90 transition disabled:opacity-50"
           >
-            {isLoggingIn ? 'Initializing SDK...' : 'Connect & Authenticate'}
+            {isLoggingIn ? 'Connecting...' : 'Secure Login'}
           </button>
         </form>
       </div>
@@ -391,17 +394,26 @@ export const AutoBotController = () => {
         <div className="bg-[#0b0e14] border border-[#1e2330] rounded-2xl p-6 shadow-xl flex flex-col justify-between">
           <div>
             <h3 className="text-lg font-bold flex items-center gap-2 mb-2">
-              <RefreshCw size={18} className="text-gray-400" /> IQ Option Connection
+              <RefreshCw size={18} className="text-gray-400" /> Account Context
             </h3>
-            <p className="text-sm text-gray-400 mb-6">Connected to account</p>
+            <p className="text-sm text-gray-400 mb-6">Linked to: {email}</p>
             <div className="bg-[#0f1d18] border border-[#00e676]/30 rounded-xl p-4 flex justify-between items-center">
               <div className="flex items-center gap-3">
                 <CheckCircle2 className="text-[#00e676]" size={24} />
                 <div>
                   <p className="text-[#00e676] font-bold capitalize">{accountType} Mode</p>
-                  <p className="text-xs text-[#00e676]/70">
-                    Balance: {balance !== null ? `$${balance.toLocaleString()}` : '...'}
-                  </p>
+                  <div className="flex items-center gap-2">
+                    <p className="text-xs text-[#00e676]/70">
+                      Balance: {balance !== null ? `$${balance.toLocaleString()}` : 'Unavailable'}
+                    </p>
+                    <button 
+                      onClick={() => jwt && fetchBalance(jwt)}
+                      className="text-[#00e676] hover:rotate-180 transition-transform duration-500"
+                      title="Sync Balance"
+                    >
+                      <RefreshCw size={12} />
+                    </button>
+                  </div>
                 </div>
               </div>
               <div className="text-right">
@@ -417,17 +429,20 @@ export const AutoBotController = () => {
             
             <div className="mt-4 p-3 bg-[#131823] rounded-xl border border-[#1e2330]">
               <div className="flex justify-between items-center">
-                <span className="text-xs text-gray-400">Connection Test</span>
+                <div className="flex items-center gap-2">
+                  <div className={`w-2 h-2 rounded-full ${testResult?.startsWith('Success') ? 'bg-[#00e676]' : 'bg-red-500'}`}></div>
+                  <span className="text-xs text-gray-400">Engine Status</span>
+                </div>
                 <button 
                   onClick={testConnection}
                   disabled={isTesting}
                   className="text-[10px] bg-[#00bfff]/10 text-[#00bfff] px-2 py-1 rounded border border-[#00bfff]/20 hover:bg-[#00bfff]/20 transition"
                 >
-                  {isTesting ? 'Testing...' : 'Run Test'}
+                  {isTesting ? 'Testing...' : 'Verify Connection'}
                 </button>
               </div>
               {testResult && (
-                <p className={`text-[10px] mt-2 p-1 rounded ${testResult.startsWith('Success') ? 'bg-green-500/10 text-green-400' : 'bg-red-500/10 text-red-400'}`}>
+                <p className={`text-[10px] mt-2 p-1 rounded font-mono ${testResult.startsWith('Success') ? 'text-green-400' : 'text-red-400'}`}>
                   {testResult}
                 </p>
               )}
@@ -440,9 +455,9 @@ export const AutoBotController = () => {
           <div className="flex justify-between items-start mb-6">
             <div>
               <h3 className="text-lg font-bold flex items-center gap-2">
-                <Activity size={18} className="text-[#00e676]" /> Auto-Trading Status
+                <Activity size={18} className="text-[#00e676]" /> Auto-Bot Controller
               </h3>
-              <p className="text-sm text-gray-400">{isActive ? 'Automatically trading based on AI signals' : 'Enable to start auto-trading'}</p>
+              <p className="text-sm text-gray-400">{isActive ? 'Trading Engine is active and listening for signals.' : 'Bot is currently in standby mode.'}</p>
             </div>
             <button 
               onClick={() => setIsActive(!isActive)}
@@ -450,34 +465,34 @@ export const AutoBotController = () => {
                 isActive ? 'bg-red-500/10 text-red-500 border border-red-500/30' : 'bg-[#00e676] text-[#0b0e14]'
               }`}
             >
-              {isActive ? 'Disable' : 'Enable'}
+              {isActive ? 'Stop Bot' : 'Start Bot'}
             </button>
           </div>
 
           <div className="grid grid-cols-4 gap-4 mb-6">
             <div className="bg-[#131823] p-4 rounded-xl text-center border border-[#1e2330]">
               <p className="text-[#00e676] text-2xl font-bold">{stats.wins}</p>
-              <p className="text-xs text-gray-400 mt-1">Total Wins</p>
+              <p className="text-xs text-gray-400 mt-1">Wins</p>
             </div>
             <div className="bg-[#131823] p-4 rounded-xl text-center border border-[#1e2330]">
               <p className="text-red-400 text-2xl font-bold">{stats.losses}</p>
-              <p className="text-xs text-gray-400 mt-1">Total Losses</p>
+              <p className="text-xs text-gray-400 mt-1">Losses</p>
             </div>
             <div className="bg-[#131823] p-4 rounded-xl text-center border border-[#1e2330]">
               <p className={`text-2xl font-bold ${stats.profit >= 0 ? 'text-[#00e676]' : 'text-red-400'}`}>
                 ${stats.profit.toFixed(2)}
               </p>
-              <p className="text-xs text-gray-400 mt-1">Total Profit</p>
+              <p className="text-xs text-gray-400 mt-1">Profit</p>
             </div>
             <div className="bg-[#131823] p-4 rounded-xl text-center border border-[#1e2330]">
               <p className="text-[#00bfff] text-2xl font-bold">{winRate}%</p>
-              <p className="text-xs text-gray-400 mt-1">Win Rate</p>
+              <p className="text-xs text-gray-400 mt-1">Efficiency</p>
             </div>
           </div>
 
           <div>
             <div className="flex justify-between text-xs text-gray-400 mb-2">
-              <span>Today's Trades</span>
+              <span>Trade Volume</span>
               <span>{stats.totalTrades} / {config.maxDailyTrades}</span>
             </div>
             <div className="h-2 w-full bg-[#131823] rounded-full overflow-hidden border border-[#1e2330]">
@@ -494,22 +509,21 @@ export const AutoBotController = () => {
         
         {/* Trading Settings */}
         <div className="bg-[#0b0e14] border border-[#1e2330] rounded-2xl p-6 shadow-xl xl:col-span-2">
-          <h3 className="text-lg font-bold mb-1">Trading Settings</h3>
-          <p className="text-sm text-gray-400 mb-6">Configure your auto-trading preferences and daily stop loss</p>
+          <h3 className="text-lg font-bold mb-1">Trading Configuration</h3>
+          <p className="text-sm text-gray-400 mb-6">Manage risk limits and asset selection</p>
 
           <div className="grid grid-cols-2 gap-6 mb-6">
             <div className="space-y-2">
-              <label className="text-sm text-gray-400">Stake Amount ($)</label>
+              <label className="text-sm text-gray-400">Stake Per Trade ($)</label>
               <input 
                 type="number" 
                 className="w-full bg-[#131823] border border-[#1e2330] p-3 rounded-xl focus:border-[#00e676] outline-none"
                 value={config.stake}
                 onChange={(e) => setConfig({...config, stake: Number(e.target.value)})}
               />
-              <p className="text-xs text-gray-500">Min: $1 | Max: $5000</p>
             </div>
             <div className="space-y-2">
-              <label className="text-sm text-gray-400">Max Daily Trades</label>
+              <label className="text-sm text-gray-400">Max Trades / Session</label>
               <input 
                 type="number" 
                 className="w-full bg-[#131823] border border-[#1e2330] p-3 rounded-xl focus:border-[#00e676] outline-none"
@@ -518,17 +532,16 @@ export const AutoBotController = () => {
               />
             </div>
             <div className="space-y-2">
-              <label className="text-sm text-gray-400">Daily Stop Loss ($)</label>
+              <label className="text-sm text-gray-400">Stop Loss Limit ($)</label>
               <input 
                 type="number" 
                 className="w-full bg-[#131823] border border-[#1e2330] p-3 rounded-xl focus:border-red-400 outline-none"
                 value={config.maxLoss}
                 onChange={(e) => setConfig({...config, maxLoss: Number(e.target.value)})}
               />
-              <p className="text-xs text-gray-500">Bot stops if loss exceeds this amount</p>
             </div>
             <div className="space-y-2">
-              <label className="text-sm text-gray-400">Min. Signal Confidence (%)</label>
+              <label className="text-sm text-gray-400">Signal Confidence (%)</label>
               <input 
                 type="number" 
                 className="w-full bg-[#131823] border border-[#1e2330] p-3 rounded-xl focus:border-[#00bfff] outline-none"
@@ -542,8 +555,8 @@ export const AutoBotController = () => {
                   <Activity size={18} />
                 </div>
                 <div>
-                  <p className="text-sm font-bold">Blitz Trading Mode</p>
-                  <p className="text-xs text-gray-400">Ultra-fast trade execution</p>
+                  <p className="text-sm font-bold">Blitz Mode (60s)</p>
+                  <p className="text-xs text-gray-400">Enable for ultra-fast trading</p>
                 </div>
               </div>
               <button 
@@ -556,7 +569,7 @@ export const AutoBotController = () => {
           </div>
 
           <div className="mb-6">
-            <label className="text-sm text-gray-400 block mb-3">Enabled Timeframes</label>
+            <label className="text-sm text-gray-400 block mb-3">Timeframes</label>
             <div className="flex flex-wrap gap-3">
               {AVAILABLE_TIMEFRAMES.map(tf => (
                 <button
@@ -575,10 +588,7 @@ export const AutoBotController = () => {
           </div>
 
           <div>
-            <div className="flex justify-between items-end mb-3">
-              <label className="text-sm text-gray-400">Currency Pairs</label>
-              <span className="text-xs text-gray-500">{config.pairs.length} / 10 selected</span>
-            </div>
+            <label className="text-sm text-gray-400 block mb-3">Assets</label>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
               {AVAILABLE_PAIRS.map(pair => (
                 <button
@@ -597,17 +607,16 @@ export const AutoBotController = () => {
           </div>
         </div>
 
-        {/* Recent Trades */}
+        {/* Trade History */}
         <div className="bg-[#0b0e14] border border-[#1e2330] rounded-2xl p-6 shadow-xl flex flex-col h-full overflow-hidden">
-          <h3 className="text-lg font-bold mb-1">Recent Trades</h3>
-          <p className="text-sm text-gray-400 mb-6">Your auto-trading history</p>
+          <h3 className="text-lg font-bold mb-1">Execution History</h3>
+          <p className="text-sm text-gray-400 mb-6">Last trades in this session</p>
 
           <div className="flex-1 overflow-y-auto pr-2 space-y-3">
             {recentTrades.length === 0 ? (
               <div className="text-center text-gray-500 mt-10">
                 <ShieldCheck size={48} className="mx-auto mb-3 opacity-20" />
-                <p>No recent trades</p>
-                <p className="text-xs mt-1">Enable Auto-Trading to begin</p>
+                <p>Waiting for signals...</p>
               </div>
             ) : (
               recentTrades.map((trade) => (
@@ -620,19 +629,14 @@ export const AutoBotController = () => {
                     </div>
                     <div>
                       <p className="font-bold">{trade.pair}</p>
-                      <p className="text-xs text-gray-400">{trade.timeframe} | ${trade.stake} &bull; {trade.time}</p>
+                      <p className="text-xs text-gray-400">{trade.timeframe} | ${trade.stake}</p>
                     </div>
                   </div>
                   <div className="text-right">
-                    {trade.status === 'WIN' && <p className="text-[#00e676] font-bold flex items-center gap-1 justify-end"><CheckCircle2 size={14}/> WIN</p>}
-                    {trade.status === 'LOSS' && <p className="text-red-400 font-bold flex items-center gap-1 justify-end"><XCircle size={14}/> LOSS</p>}
-                    {trade.status === 'PENDING' && <p className="text-[#00bfff] font-bold">PENDING</p>}
-                    
-                    {trade.status !== 'PENDING' && (
-                      <p className={`text-sm ${trade.pnl > 0 ? 'text-[#00e676]' : 'text-red-400'}`}>
-                        {trade.pnl > 0 ? '+' : ''}${Math.abs(trade.pnl).toFixed(2)}
-                      </p>
-                    )}
+                    <p className={`font-bold ${trade.status === 'SUCCESS' || trade.status === 'WIN' ? 'text-[#00e676]' : 'text-[#00bfff]'}`}>
+                      {trade.status}
+                    </p>
+                    <p className="text-[10px] text-gray-500">{trade.time}</p>
                   </div>
                 </div>
               ))
@@ -640,6 +644,32 @@ export const AutoBotController = () => {
           </div>
         </div>
 
+      </div>
+
+      {/* System Logs Viewer */}
+      <div className="bg-[#0b0e14] border border-[#1e2330] rounded-2xl p-6 shadow-xl">
+        <div className="flex justify-between items-center mb-4">
+          <h3 className="text-lg font-bold flex items-center gap-2">
+            <Activity size={18} className="text-[#00e676]" /> Real-Time Engine Logs
+          </h3>
+          <button 
+            onClick={() => setLogs([])}
+            className="text-[10px] text-gray-500 hover:text-white transition"
+          >
+            Clear Output
+          </button>
+        </div>
+        <div className="bg-[#0b0b0e] border border-[#1e2330] rounded-xl p-4 h-48 overflow-y-auto font-mono text-[10px] space-y-1">
+          {logs.length === 0 ? (
+            <p className="text-gray-600">Engine idle. Start bot to begin logging.</p>
+          ) : (
+            logs.map((log, i) => (
+              <p key={i} className={`${log.includes('Executing') ? 'text-[#00bfff]' : log.includes('Success') || log.includes('synchronized') ? 'text-[#00e676]' : log.includes('Error') || log.includes('Warning') ? 'text-red-400' : 'text-gray-400'}`}>
+                {log}
+              </p>
+            ))
+          )}
+        </div>
       </div>
 
     </div>
