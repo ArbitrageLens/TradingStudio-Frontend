@@ -233,7 +233,7 @@ export const AutoBotController = () => {
           <div className="bg-[#131823] w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 border border-[#1e2330]">
             <Lock className="text-[#00e676]" size={32} />
           </div>
-          <h2 className="text-2xl font-bold">Connect to Alphaly</h2>
+          <h2 className="text-2xl font-bold">Connect to TradingStudio</h2>
           <p className="text-sm text-gray-400 mt-2">Enter your IQ Option credentials to initialize the engine.</p>
         </div>
 
@@ -493,4 +493,4 @@ export const AutoBotController = () => {
 
     </div>
   );
-};
+}
