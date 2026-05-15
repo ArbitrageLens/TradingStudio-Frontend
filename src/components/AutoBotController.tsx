@@ -2,8 +2,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Play, Square, ShieldCheck, Activity, Lock, Mail, Key, CheckCircle2, XCircle, RefreshCw } from 'lucide-react';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://tradingstudio-backend-production.up.railway.app';
-
 const AVAILABLE_PAIRS = [
   'EURUSD-OTC', 'GBPUSD-OTC', 'USDJPY-OTC', 'USDCHF-OTC',
   'AUDUSD-OTC', 'USDCAD-OTC', 'NZDUSD-OTC', 'EURGBP-OTC',
@@ -24,9 +22,13 @@ interface TradeRecord {
   time: string;
 }
 
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://tradingstudio-backend-production.up.railway.app';
+
 export const AutoBotController = () => {
   const [jwt, setJwt] = useState<string | null>(null);
   const [accountType, setAccountType] = useState<'demo' | 'live'>('demo');
+  const [testResult, setTestResult] = useState<string | null>(null);
+  const [isTesting, setIsTesting] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLoggingIn, setIsLoggingIn] = useState(false);
@@ -148,6 +150,24 @@ export const AutoBotController = () => {
       setLoginError(err.message || 'Failed to login');
     } finally {
       setIsLoggingIn(false);
+    }
+  };
+
+  const testConnection = async () => {
+    setIsTesting(true);
+    setTestResult(null);
+    try {
+      const res = await fetch(`${API_URL}/`).catch(() => null);
+      if (res && res.ok) {
+        const text = await res.text();
+        setTestResult(`Success: ${text}`);
+      } else {
+        setTestResult(`Failed: ${res?.status || 'Network Error'}`);
+      }
+    } catch (err: any) {
+      setTestResult(`Error: ${err.message}`);
+    } finally {
+      setIsTesting(false);
     }
   };
 
@@ -381,12 +401,33 @@ export const AutoBotController = () => {
                   </p>
                 </div>
               </div>
-              <button 
-                onClick={handleLogout}
-                className="text-xs bg-red-500/10 text-red-500 px-3 py-1 rounded-lg border border-red-500/20 hover:bg-red-500/20 transition"
-              >
-                Logout
-              </button>
+              <div className="text-right">
+                <button 
+                  onClick={handleLogout}
+                  className="text-xs bg-red-500/10 text-red-500 px-3 py-1 rounded-lg border border-red-500/20 hover:bg-red-500/20 transition mb-2 block w-full"
+                >
+                  Logout
+                </button>
+                <p className="text-[10px] text-gray-500">API: {API_URL.replace('https://', '')}</p>
+              </div>
+            </div>
+            
+            <div className="mt-4 p-3 bg-[#131823] rounded-xl border border-[#1e2330]">
+              <div className="flex justify-between items-center">
+                <span className="text-xs text-gray-400">Connection Test</span>
+                <button 
+                  onClick={testConnection}
+                  disabled={isTesting}
+                  className="text-[10px] bg-[#00bfff]/10 text-[#00bfff] px-2 py-1 rounded border border-[#00bfff]/20 hover:bg-[#00bfff]/20 transition"
+                >
+                  {isTesting ? 'Testing...' : 'Run Test'}
+                </button>
+              </div>
+              {testResult && (
+                <p className={`text-[10px] mt-2 p-1 rounded ${testResult.startsWith('Success') ? 'bg-green-500/10 text-green-400' : 'bg-red-500/10 text-red-400'}`}>
+                  {testResult}
+                </p>
+              )}
             </div>
           </div>
         </div>
