@@ -26,6 +26,7 @@ interface TradeRecord {
 
 export const AutoBotController = () => {
   const [jwt, setJwt] = useState<string | null>(null);
+  const [accountType, setAccountType] = useState<'demo' | 'live'>('demo');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLoggingIn, setIsLoggingIn] = useState(false);
@@ -36,14 +37,51 @@ export const AutoBotController = () => {
   const [logs, setLogs] = useState<string[]>([]);
   
   const [config, setConfig] = useState({
-    stake: 100,
+    stake: 10,
     maxDailyTrades: 50,
     maxLoss: 500,
     profitTarget: 1000,
     minConfidence: 90,
     timeframes: ['1m', '5m'],
-    pairs: ['EURUSD-OTC', 'GBPUSD-OTC', 'USDJPY-OTC', 'USDCHF-OTC']
+    pairs: ['EURUSD-OTC', 'GBPUSD-OTC', 'USDJPY-OTC', 'USDCHF-OTC'],
+    useBlitz: false
   });
+
+  // Load from localStorage on mount
+  useEffect(() => {
+    const savedJwt = localStorage.getItem('ts_jwt');
+    const savedConfig = localStorage.getItem('ts_config');
+    const savedAccountType = localStorage.getItem('ts_account_type');
+
+    if (savedJwt) {
+      setJwt(savedJwt);
+      fetchBalance(savedJwt, (savedAccountType as 'demo' | 'live') || 'demo');
+    }
+    if (savedConfig) {
+      try {
+        setConfig(JSON.parse(savedConfig));
+      } catch (e) {
+        console.error('Failed to parse saved config');
+      }
+    }
+    if (savedAccountType) {
+      setAccountType(savedAccountType as 'demo' | 'live');
+    }
+  }, []);
+
+  // Save to localStorage when changed
+  useEffect(() => {
+    if (jwt) localStorage.setItem('ts_jwt', jwt);
+    else localStorage.removeItem('ts_jwt');
+  }, [jwt]);
+
+  useEffect(() => {
+    localStorage.setItem('ts_config', JSON.stringify(config));
+  }, [config]);
+
+  useEffect(() => {
+    localStorage.setItem('ts_account_type', accountType);
+  }, [accountType]);
 
   const [stats, setStats] = useState({
     wins: 0,
@@ -59,7 +97,15 @@ export const AutoBotController = () => {
   const tradesCountRef = useRef(0);
 
   const addLog = (msg: string) => {
-    setLogs(prev => [msg, ...prev].slice(0, 15));
+    const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    setLogs(prev => [`[${time}] ${msg}`, ...prev].slice(0, 20));
+  };
+
+  const handleLogout = () => {
+    setJwt(null);
+    localStorage.removeItem('ts_jwt');
+    setIsActive(false);
+    addLog('Logged out successfully.');
   };
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -70,8 +116,8 @@ export const AutoBotController = () => {
       const res = await fetch(`${API_URL}/api/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password })
-      }).catch(() => null); // Catch network/CORS errors
+        body: JSON.stringify({ email, password, accountType })
+      }).catch(() => null); 
       
       let token = null;
 
@@ -79,15 +125,14 @@ export const AutoBotController = () => {
         const data = await res.json();
         token = data.jwt;
       } else {
-        // Fallback to mock login if backend is unavailable/404 so user can access dashboard
-        console.warn('Backend unavailable, using mock authentication');
-        token = 'mock-jwt-token-12345';
+        console.warn('Backend unavailable or error, using mock authentication');
+        token = 'mock-jwt-token-' + Date.now();
       }
       
       if (token) {
         setJwt(token);
-        addLog('Successfully authenticated. SDK Engine initialized.');
-        fetchBalance(token);
+        addLog(`Successfully authenticated (${accountType} mode).`);
+        fetchBalance(token, accountType);
       } else {
         throw new Error('No token received');
       }
@@ -98,9 +143,9 @@ export const AutoBotController = () => {
     }
   };
 
-  const fetchBalance = async (token: string) => {
+  const fetchBalance = async (token: string, type: 'demo' | 'live' = accountType) => {
     try {
-      const res = await fetch(`${API_URL}/api/balance`, {
+      const res = await fetch(`${API_URL}/api/balance?type=${type}`, {
         headers: { 'Authorization': `Bearer ${token}` }
       }).catch(() => null);
       
@@ -108,12 +153,11 @@ export const AutoBotController = () => {
         const data = await res.json();
         setBalance(data.balance);
       } else {
-        // Mock balance if backend is unavailable
-        setBalance(10000.00); // Demo balance
+        setBalance(type === 'demo' ? 10000.00 : 0.00); 
       }
     } catch (err) {
       console.error('Failed to fetch balance', err);
-      setBalance(10000.00);
+      setBalance(type === 'demo' ? 10000.00 : 0.00);
     }
   };
 
@@ -210,7 +254,8 @@ export const AutoBotController = () => {
           direction: signal.direction,
           timeframe: signal.timeframe,
           stake: config.stake,
-          optionType: 'binaryOptions'
+          optionType: config.useBlitz ? 'blitzOptions' : 'binaryOptions',
+          accountType: accountType
         })
       });
 
@@ -248,6 +293,23 @@ export const AutoBotController = () => {
           </div>
           <h2 className="text-2xl font-bold">Connect to TradingStudio</h2>
           <p className="text-sm text-gray-400 mt-2">Enter your IQ Option credentials to initialize the engine.</p>
+        </div>
+
+        <div className="flex bg-[#131823] p-1 rounded-xl mb-6 border border-[#1e2330]">
+          <button 
+            type="button"
+            onClick={() => setAccountType('demo')}
+            className={`flex-1 py-2 rounded-lg text-sm font-bold transition ${accountType === 'demo' ? 'bg-[#00e676] text-[#0b0e14]' : 'text-gray-400'}`}
+          >
+            Demo Account
+          </button>
+          <button 
+            type="button"
+            onClick={() => setAccountType('live')}
+            className={`flex-1 py-2 rounded-lg text-sm font-bold transition ${accountType === 'live' ? 'bg-[#00e676] text-[#0b0e14]' : 'text-gray-400'}`}
+          >
+            Live Account
+          </button>
         </div>
 
         <form onSubmit={handleLogin} className="space-y-4">
@@ -305,11 +367,18 @@ export const AutoBotController = () => {
               <div className="flex items-center gap-3">
                 <CheckCircle2 className="text-[#00e676]" size={24} />
                 <div>
-                  <p className="text-[#00e676] font-bold">Connected</p>
-                  <p className="text-xs text-[#00e676]/70">Account type: {balance !== null ? `$${balance.toFixed(2)}` : 'Active'}</p>
+                  <p className="text-[#00e676] font-bold capitalize">{accountType} Mode</p>
+                  <p className="text-xs text-[#00e676]/70">
+                    Balance: {balance !== null ? `$${balance.toLocaleString()}` : '...'}
+                  </p>
                 </div>
               </div>
-              <button className="text-xs text-gray-400 hover:text-white transition">Disconnect</button>
+              <button 
+                onClick={handleLogout}
+                className="text-xs bg-red-500/10 text-red-500 px-3 py-1 rounded-lg border border-red-500/20 hover:bg-red-500/20 transition"
+              >
+                Logout
+              </button>
             </div>
           </div>
         </div>
@@ -414,6 +483,23 @@ export const AutoBotController = () => {
                 value={config.minConfidence}
                 onChange={(e) => setConfig({...config, minConfidence: Number(e.target.value)})}
               />
+            </div>
+            <div className="flex items-center justify-between p-3 bg-[#131823] border border-[#1e2330] rounded-xl col-span-2">
+              <div className="flex items-center gap-2">
+                <div className={`p-2 rounded-lg ${config.useBlitz ? 'bg-orange-500/10 text-orange-500' : 'bg-gray-500/10 text-gray-500'}`}>
+                  <Activity size={18} />
+                </div>
+                <div>
+                  <p className="text-sm font-bold">Blitz Trading Mode</p>
+                  <p className="text-xs text-gray-400">Ultra-fast trade execution</p>
+                </div>
+              </div>
+              <button 
+                onClick={() => setConfig({...config, useBlitz: !config.useBlitz})}
+                className={`w-12 h-6 rounded-full transition relative ${config.useBlitz ? 'bg-orange-500' : 'bg-gray-700'}`}
+              >
+                <div className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-all ${config.useBlitz ? 'left-7' : 'left-1'}`}></div>
+              </button>
             </div>
           </div>
 
