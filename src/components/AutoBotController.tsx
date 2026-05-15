@@ -22,7 +22,10 @@ interface TradeRecord {
   time: string;
 }
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://tradingstudio-backend-production.up.railway.app';
+let API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://tradingstudio-backend-production.up.railway.app';
+if (API_URL && !API_URL.startsWith('http')) {
+  API_URL = `https://${API_URL}`;
+}
 
 export const AutoBotController = () => {
   const [jwt, setJwt] = useState<string | null>(null);
