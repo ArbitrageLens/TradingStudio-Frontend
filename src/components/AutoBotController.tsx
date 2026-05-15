@@ -52,6 +52,7 @@ export const AutoBotController = () => {
     const savedJwt = localStorage.getItem('ts_jwt');
     const savedConfig = localStorage.getItem('ts_config');
     const savedAccountType = localStorage.getItem('ts_account_type');
+    const savedIsActive = localStorage.getItem('ts_is_active');
 
     if (savedJwt) {
       setJwt(savedJwt);
@@ -66,6 +67,9 @@ export const AutoBotController = () => {
     }
     if (savedAccountType) {
       setAccountType(savedAccountType as 'demo' | 'live');
+    }
+    if (savedIsActive === 'true') {
+      setIsActive(true);
     }
   }, []);
 
@@ -82,6 +86,10 @@ export const AutoBotController = () => {
   useEffect(() => {
     localStorage.setItem('ts_account_type', accountType);
   }, [accountType]);
+
+  useEffect(() => {
+    localStorage.setItem('ts_is_active', isActive.toString());
+  }, [isActive]);
 
   const [stats, setStats] = useState({
     wins: 0,
