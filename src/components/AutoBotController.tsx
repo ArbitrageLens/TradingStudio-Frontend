@@ -702,7 +702,7 @@ export const AutoBotController = () => {
                     </div>
                   </div>
                   <div className="text-right">
-                    <p className={`font-mono font-bold ${trade.status === 'SUCCESS' || trade.status === 'WIN' ? 'text-[#00e676]' : 'text-[#00bfff]'}`}>
+                    <p className={`font-mono font-bold ${trade.status === 'WIN' ? 'text-[#00e676]' : trade.status === 'LOSS' ? 'text-red-500' : 'text-[#00bfff]'}`}>
                       {trade.status}
                     </p>
                     <p className="text-[10px] text-gray-500 font-mono mt-1 opacity-50">{trade.time}</p>
