@@ -18,7 +18,7 @@ interface TradeRecord {
   timeframe: string;
   stake: number;
   direction: string;
-  status: 'WIN' | 'LOSS' | 'PENDING' | 'SUCCESS';
+  status: 'WIN' | 'LOSS' | 'PENDING';
   pnl: number;
   time: string;
 }
@@ -41,7 +41,11 @@ export const AutoBotController = () => {
   const [isActive, setIsActive] = useState(false);
   const [balance, setBalance] = useState<number | null>(null);
   const [logs, setLogs] = useState<string[]>([]);
+  
+  // Connectivity States
   const [isWsConnected, setIsWsConnected] = useState(false);
+  const [apiStatus, setApiStatus] = useState<'connecting' | 'connected' | 'error'>('connecting');
+  const [accountSyncStatus, setAccountSyncStatus] = useState<'pending' | 'synced' | 'error'>('pending');
   
   const [config, setConfig] = useState({
     stake: 10,
@@ -157,6 +161,24 @@ export const AutoBotController = () => {
     }
   };
 
+  const testConnection = async () => {
+    setIsTesting(true);
+    setTestResult(null);
+    try {
+      const res = await fetch(`${API_URL}/`).catch(() => null);
+      if (res && res.ok) {
+        const text = await res.text();
+        setTestResult(`Success: ${text}`);
+      } else {
+        setTestResult(`Failed: ${res?.status || 'Network Error'}`);
+      }
+    } catch (err: any) {
+      setTestResult(`Error: ${err.message}`);
+    } finally {
+      setIsTesting(false);
+    }
+  };
+
   const fetchBalance = async (token: string, type: 'demo' | 'live' = accountType) => {
     try {
       const res = await fetch(`${API_URL}/api/balance?type=${type}`, {
@@ -166,14 +188,17 @@ export const AutoBotController = () => {
       if (res && res.ok) {
         const data = await res.json();
         setBalance(data.balance);
+        setAccountSyncStatus('synced');
         addLog(`Balance synchronized: $${data.balance.toLocaleString()}`);
       } else {
         setBalance(null);
+        setAccountSyncStatus('error');
         addLog(`Warning: Could not fetch ${type} balance from server.`);
       }
     } catch (err) {
       console.error('Failed to fetch balance', err);
       setBalance(null);
+      setAccountSyncStatus('error');
     }
   };
 
@@ -195,11 +220,31 @@ export const AutoBotController = () => {
     }));
   };
 
+  // Connectivity Monitoring
+  useEffect(() => {
+    const checkApi = async () => {
+      try {
+        const res = await fetch(`${API_URL}/`).catch(() => null);
+        if (res && res.ok) {
+          setApiStatus('connected');
+        } else {
+          setApiStatus('error');
+        }
+      } catch {
+        setApiStatus('error');
+      }
+    };
+
+    checkApi();
+    const interval = setInterval(checkApi, 30000); // Check every 30s
+    return () => clearInterval(interval);
+  }, []);
+
   // Signal API Listener
   useEffect(() => {
     if (!jwt) return;
 
-    const wsUrl = `${API_URL.replace(/^http/, 'ws')}/api/signals?token=${jwt}`;
+    const wsUrl = `wss://${API_URL.replace(/^https?:\/\//, '')}/api/signals?token=${jwt}`;
     const ws = new WebSocket(wsUrl);
     wsRef.current = ws;
 
@@ -211,7 +256,9 @@ export const AutoBotController = () => {
     ws.onmessage = async (event) => {
       try {
         const signal = JSON.parse(event.data);
+        // Signal format expected: { pair: 'EURUSD-OTC', timeframe: '5m', direction: 'CALL', accuracy: 92 }
         
+        // Match user's custom parameters
         const matchesPair = config.pairs.includes(signal.pair);
         const matchesTimeframe = config.timeframes.includes(signal.timeframe || '1m');
         const matchesConfidence = signal.accuracy >= config.minConfidence;
@@ -241,6 +288,7 @@ export const AutoBotController = () => {
   }, [jwt, isActive, config]);
 
   const executeTrade = async (signal: any) => {
+    // Check risk limits
     if (currentPnlRef.current <= -config.maxLoss) {
       addLog(`Daily Stop Loss reached ($${config.maxLoss}). Stopping bot.`);
       setIsActive(false);
@@ -282,19 +330,19 @@ export const AutoBotController = () => {
         const result = await res.json();
         addLog(`Trade placed successfully. ID: ${result.tradeId}`);
         
+        // Add to recent trades as PENDING, or use mock result if backend returns it immediately
         const newTrade: TradeRecord = {
           id: result.tradeId || Math.random().toString(36).substring(7),
           pair: signal.pair,
           timeframe: signal.timeframe || '1m',
           stake: config.stake,
           direction: signal.direction === 'CALL' ? 'BUY' : 'SELL',
-          status: result.status || 'SUCCESS',
+          status: result.status || 'PENDING',
           pnl: result.pnl || 0,
           time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
         };
         
         setRecentTrades(prev => [newTrade, ...prev].slice(0, 50));
-        fetchBalance(jwt!, accountType);
       } else {
         addLog(`Trade execution failed: ${res.statusText}`);
       }
@@ -309,7 +357,7 @@ export const AutoBotController = () => {
         initial={{ opacity: 0, scale: 0.9 }}
         animate={{ opacity: 1, scale: 1 }}
         transition={{ duration: 0.5, ease: "easeOut" }}
-        className="bg-[#0b0e14]/90 backdrop-blur-3xl border border-white/10 p-12 rounded-[3rem] max-w-lg mx-auto shadow-[0_40px_80px_-20px_rgba(0,0,0,0.7)] text-white relative overflow-hidden group"
+        className="bg-[#0b0e14]/90 backdrop-blur-3xl border border-white/10 p-8 md:p-12 rounded-[2.5rem] md:rounded-[3rem] max-w-lg mx-auto shadow-[0_40px_80px_-20px_rgba(0,0,0,0.7)] text-white relative overflow-hidden group"
       >
         <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-[#00e676] to-transparent opacity-40"></div>
         <div className="absolute -top-24 -left-24 w-48 h-48 bg-[#00e676]/10 rounded-full blur-[80px]"></div>
@@ -427,7 +475,7 @@ export const AutoBotController = () => {
         <motion.div 
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          className="bg-[#0b0e14]/60 backdrop-blur-2xl border border-white/5 rounded-[2.5rem] p-10 shadow-2xl flex flex-col justify-between group overflow-hidden relative"
+          className="bg-[#0b0e14]/60 backdrop-blur-2xl border border-white/5 rounded-[2.5rem] p-6 md:p-10 shadow-2xl flex flex-col justify-between group overflow-hidden relative"
         >
           <div className="absolute -top-10 -right-10 w-32 h-32 bg-[#00e676]/5 rounded-full blur-3xl group-hover:bg-[#00e676]/10 transition-all"></div>
           
@@ -497,7 +545,7 @@ export const AutoBotController = () => {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.1 }}
-          className="bg-[#0b0e14]/60 backdrop-blur-2xl border border-white/5 rounded-[2.5rem] p-10 shadow-2xl lg:col-span-2 overflow-hidden relative"
+          className="bg-[#0b0e14]/60 backdrop-blur-2xl border border-white/5 rounded-[2.5rem] p-6 md:p-10 shadow-2xl lg:col-span-2 overflow-hidden relative"
         >
           <div className="absolute top-0 right-0 w-64 h-64 bg-[#00e676]/5 rounded-full blur-[100px] pointer-events-none"></div>
           
@@ -518,7 +566,7 @@ export const AutoBotController = () => {
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
               onClick={() => setIsActive(!isActive)}
-              className={`px-12 py-5 rounded-[1.75rem] font-black transition-all shadow-2xl flex items-center gap-3 uppercase tracking-tighter text-sm ${
+              className={`w-full md:w-auto px-12 py-5 rounded-[1.75rem] font-black transition-all shadow-2xl flex items-center justify-center gap-3 uppercase tracking-tighter text-sm ${
                 isActive 
                   ? 'bg-red-500 text-white shadow-red-500/20' 
                   : 'bg-gradient-to-r from-[#00e676] to-[#00bfff] text-[#0b0e14] shadow-[#00e676]/20'
@@ -752,57 +800,87 @@ export const AutoBotController = () => {
         initial={{ opacity: 0, y: 30 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.5 }}
-        className="bg-[#0b0e14]/60 backdrop-blur-3xl border border-white/10 rounded-[3rem] p-12 shadow-3xl overflow-hidden relative"
+        className="grid grid-cols-1 xl:grid-cols-4 gap-8"
       >
-        <div className="absolute top-0 left-0 w-full h-[1px] bg-gradient-to-r from-transparent via-white/10 to-transparent"></div>
-        
-        <div className="flex flex-col md:flex-row justify-between items-center mb-10 gap-6">
-          <div className="flex items-center gap-5">
-            <div className="w-16 h-16 rounded-2xl bg-white/5 flex items-center justify-center border border-white/10 shadow-inner">
-              <Terminal className="text-[#00e676]" size={32} />
+        <div className="xl:col-span-3 bg-[#0b0e14]/60 backdrop-blur-3xl border border-white/10 rounded-[3rem] p-12 shadow-3xl overflow-hidden relative">
+          <div className="absolute top-0 left-0 w-full h-[1px] bg-gradient-to-r from-transparent via-white/10 to-transparent"></div>
+          
+          <div className="flex flex-col md:flex-row justify-between items-center mb-10 gap-6">
+            <div className="flex items-center gap-5">
+              <div className="w-16 h-16 rounded-2xl bg-white/5 flex items-center justify-center border border-white/10 shadow-inner">
+                <Terminal className="text-[#00e676]" size={32} />
+              </div>
+              <div>
+                <h3 className="text-3xl font-black tracking-tighter">Engine Output</h3>
+                <p className="text-sm text-gray-500 font-medium">Real-time system telemetry and signal analysis.</p>
+              </div>
             </div>
-            <div>
-              <h3 className="text-3xl font-black tracking-tighter">Engine Diagnostics</h3>
-              <p className="text-sm text-gray-500 font-medium">Real-time system telemetry and signal analysis.</p>
-            </div>
+            <button 
+              onClick={() => setLogs([])}
+              className="px-8 py-4 bg-white/5 hover:bg-white/10 rounded-2xl border border-white/10 text-[10px] font-black uppercase tracking-widest transition-all"
+            >
+              Flush Buffer
+            </button>
           </div>
-          <button 
-            onClick={() => setLogs([])}
-            className="px-8 py-4 bg-white/5 hover:bg-white/10 rounded-2xl border border-white/10 text-[10px] font-black uppercase tracking-widest transition-all"
-          >
-            Flush Buffer
-          </button>
+
+          <div className="bg-black/60 border border-white/5 rounded-[2rem] p-8 h-96 overflow-y-auto font-mono text-xs space-y-3 custom-scrollbar shadow-inner relative">
+            {logs.length === 0 ? (
+              <div className="h-full flex flex-col items-center justify-center text-gray-700 italic space-y-4">
+                <RefreshCw className="animate-spin opacity-20" size={48} />
+                <p className="font-black uppercase tracking-[0.4em] text-[10px] opacity-40">System Initializing...</p>
+              </div>
+            ) : (
+              logs.map((log, i) => (
+                <motion.div 
+                  initial={{ opacity: 0, x: -10 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  key={i} 
+                  className={`flex gap-4 border-l-2 pl-6 py-1 group ${
+                    log.includes('Executing') ? 'text-[#00bfff] border-[#00bfff]' : 
+                    log.includes('Success') || log.includes('synchronized') ? 'text-[#00e676] border-[#00e676]' : 
+                    log.includes('Error') || log.includes('Warning') ? 'text-red-400 border-red-400' : 
+                    'text-gray-500 border-white/10'
+                  }`}
+                >
+                  <span className="opacity-20 group-hover:opacity-100 transition-opacity whitespace-nowrap">{i.toString().padStart(3, '0')}</span>
+                  <span className="font-medium tracking-tight">{log}</span>
+                </motion.div>
+              ))
+            )}
+          </div>
         </div>
 
-        <div className="bg-black/60 border border-white/5 rounded-[2rem] p-8 h-96 overflow-y-auto font-mono text-xs space-y-3 custom-scrollbar shadow-inner relative">
-          <div className="absolute top-4 right-6 flex items-center gap-3">
-            <span className="text-[10px] text-gray-600 font-black uppercase tracking-widest">Signal Stream</span>
-            <div className={`w-2 h-2 rounded-full ${isWsConnected ? 'bg-[#00e676] animate-pulse shadow-[0_0_8px_#00e676]' : 'bg-red-500'}`}></div>
+        <div className="xl:col-span-1 bg-[#0b0e14]/60 backdrop-blur-3xl border border-white/10 rounded-[3rem] p-10 shadow-3xl flex flex-col group">
+          <div className="flex items-center gap-4 mb-10">
+            <Activity className="text-[#00e676]" size={24} />
+            <h3 className="text-xl font-black tracking-tighter">Connectivity</h3>
           </div>
-          
-          {logs.length === 0 ? (
-            <div className="h-full flex flex-col items-center justify-center text-gray-700 italic space-y-4">
-              <RefreshCw className="animate-spin opacity-20" size={48} />
-              <p className="font-black uppercase tracking-[0.4em] text-[10px] opacity-40">System Initializing...</p>
+
+          <div className="space-y-6">
+            {[
+              { label: 'Signal Stream', status: isWsConnected ? 'CONNECTED' : 'DISCONNECTED', color: isWsConnected ? 'text-[#00e676]' : 'text-red-500' },
+              { label: 'API Gateway', status: apiStatus.toUpperCase(), color: apiStatus === 'connected' ? 'text-[#00e676]' : apiStatus === 'connecting' ? 'text-[#00bfff]' : 'text-red-500' },
+              { label: 'Account Sync', status: accountSyncStatus.toUpperCase(), color: accountSyncStatus === 'synced' ? 'text-[#00e676]' : accountSyncStatus === 'pending' ? 'text-[#00bfff]' : 'text-red-500' }
+            ].map((conn, i) => (
+              <div key={i} className="bg-white/5 border border-white/5 p-6 rounded-2xl flex flex-col gap-2">
+                <span className="text-[10px] font-black text-gray-500 uppercase tracking-widest">{conn.label}</span>
+                <div className="flex items-center gap-2">
+                  <div className={`w-1.5 h-1.5 rounded-full ${conn.color.replace('text-', 'bg-')} ${conn.status !== 'DISCONNECTED' && conn.status !== 'ERROR' ? 'animate-pulse' : ''}`}></div>
+                  <span className={`text-[10px] font-black ${conn.color}`}>{conn.status}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="mt-auto pt-8 border-t border-white/5 flex items-center gap-4">
+            <div className="w-12 h-12 rounded-full bg-[#00e676]/10 flex items-center justify-center text-[#00e676] font-black text-lg">
+              {email ? email[0].toUpperCase() : 'U'}
             </div>
-          ) : (
-            logs.map((log, i) => (
-              <motion.div 
-                initial={{ opacity: 0, x: -10 }}
-                animate={{ opacity: 1, x: 0 }}
-                key={i} 
-                className={`flex gap-4 border-l-2 pl-6 py-1 group ${
-                  log.includes('Executing') ? 'text-[#00bfff] border-[#00bfff]' : 
-                  log.includes('Success') || log.includes('synchronized') ? 'text-[#00e676] border-[#00e676]' : 
-                  log.includes('Error') || log.includes('Warning') ? 'text-red-400 border-red-400' : 
-                  'text-gray-500 border-white/10'
-                }`}
-              >
-                <span className="opacity-20 group-hover:opacity-100 transition-opacity whitespace-nowrap">{i.toString().padStart(3, '0')}</span>
-                <span className="font-medium tracking-tight">{log}</span>
-              </motion.div>
-            ))
-          )}
+            <div className="flex flex-col">
+              <span className="text-[10px] font-black text-gray-500 uppercase tracking-widest">Verified Trader</span>
+              <span className="text-[10px] font-bold text-white truncate max-w-[120px]">{email}</span>
+            </div>
+          </div>
         </div>
       </motion.div>
 
