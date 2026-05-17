@@ -175,7 +175,7 @@ export default function Dashboard() {
                 <input
                   type="password"
                   placeholder="Password"
-                  value={password; }
+                  value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   className="w-full bg-[#1c2230] border border-[#2a3142] rounded-xl pl-10 pr-4 py-3 text-sm focus:outline-none focus:border-[#00e676]"
                 />
