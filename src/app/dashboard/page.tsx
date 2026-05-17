@@ -4,10 +4,13 @@ import React, { useState } from 'react';
 import {
   Bot, Play, Square, ShieldCheck, User, Lock, 
   Activity, Percent, TrendingUp, AlertCircle, 
-  LayoutDashboard, Cpu, History, LogOut, ChevronRight
+  LayoutDashboard, Cpu, History, LogOut, ChevronRight, Menu, X
 } from 'lucide-react';
 
 export default function Dashboard() {
+  // Navigation State
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+
   // Public SaaS User State
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -112,10 +115,48 @@ export default function Dashboard() {
   };
 
   return (
-    <div className="min-h-screen bg-[#030303] text-gray-300 font-sans flex selection:bg-[#00e676] selection:text-black">
+    <div className="min-h-screen bg-[#030303] text-gray-300 font-sans flex flex-col md:flex-row selection:bg-[#00e676] selection:text-black">
       
-      {/* Premium Sidebar Navigation */}
-      <aside className="w-72 bg-[#080808] border-r border-white/5 flex flex-col justify-between hidden md:flex z-10 relative">
+      {/* Mobile Header (Visible only on small screens) */}
+      <header className="md:hidden flex items-center justify-between p-5 border-b border-white/5 bg-[#050505]/95 backdrop-blur-xl sticky top-0 z-50">
+        <div className="flex items-center gap-3">
+          <div className="w-2.5 h-2.5 rounded-full bg-[#00e676] shadow-[0_0_10px_rgba(0,230,118,0.6)] animate-pulse" />
+          <span className="text-sm font-black tracking-widest text-white">TRADINGSTUDIO</span>
+        </div>
+        <button 
+          onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+          className="text-gray-400 hover:text-white transition-colors"
+        >
+          {isMobileMenuOpen ? <X size={24} /> : <Menu size={24} />}
+        </button>
+      </header>
+
+      {/* Mobile Navigation Dropdown */}
+      {isMobileMenuOpen && (
+        <div className="md:hidden fixed inset-0 top-[69px] bg-[#030303] z-40 p-6 border-b border-white/5 flex flex-col justify-between">
+          <nav className="space-y-3">
+            <a href="#" className="flex items-center gap-4 px-4 py-4 bg-white/5 text-white rounded-xl border border-white/10">
+              <LayoutDashboard size={20} className="text-[#00e676]" />
+              <span className="font-semibold">Console</span>
+            </a>
+            <a href="#" className="flex items-center gap-4 px-4 py-4 text-gray-400 hover:text-white hover:bg-white/5 rounded-xl transition-all">
+              <Cpu size={20} />
+              <span className="font-medium">Algorithms</span>
+            </a>
+            <a href="#" className="flex items-center gap-4 px-4 py-4 text-gray-400 hover:text-white hover:bg-white/5 rounded-xl transition-all">
+              <History size={20} />
+              <span className="font-medium">History</span>
+            </a>
+          </nav>
+          <button className="w-full flex items-center justify-center gap-3 px-4 py-4 text-sm font-medium text-red-400 bg-red-500/10 rounded-xl mt-8">
+            <LogOut size={18} />
+            <span>Disconnect Link</span>
+          </button>
+        </div>
+      )}
+
+      {/* Desktop Premium Sidebar (Hidden on Mobile) */}
+      <aside className="w-72 bg-[#080808] border-r border-white/5 flex-col justify-between hidden md:flex z-10 relative shrink-0">
         <div className="absolute top-0 left-0 w-full h-32 bg-gradient-to-b from-[#00e676]/5 to-transparent pointer-events-none" />
         <div className="p-8 space-y-10">
           <div className="flex items-center gap-3">
@@ -155,11 +196,11 @@ export default function Dashboard() {
       </aside>
 
       {/* Main Workspace */}
-      <div className="flex-1 flex flex-col min-h-screen relative overflow-hidden">
+      <div className="flex-1 flex flex-col min-w-0 relative overflow-hidden">
         {/* Ambient Background Glow */}
-        <div className="absolute top-[-20%] right-[-10%] w-[500px] h-[500px] bg-[#00e676]/10 rounded-full blur-[120px] pointer-events-none" />
+        <div className="absolute top-[-10%] right-[-10%] w-[300px] md:w-[500px] h-[300px] md:h-[500px] bg-[#00e676]/10 rounded-full blur-[80px] md:blur-[120px] pointer-events-none" />
 
-        <header className="h-20 border-b border-white/5 bg-[#050505]/80 backdrop-blur-xl flex items-center justify-between px-8 z-10">
+        <header className="hidden md:flex h-20 border-b border-white/5 bg-[#050505]/80 backdrop-blur-xl items-center justify-between px-8 z-10 shrink-0">
           <div>
             <h1 className="text-xl font-bold text-white">Execution Console</h1>
             <p className="text-xs text-gray-500 mt-1">Multi-Tenant Environment Active</p>
@@ -170,12 +211,12 @@ export default function Dashboard() {
           </div>
         </header>
 
-        <main className="flex-1 p-8 overflow-y-auto z-10">
-          <div className="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-12 gap-8">
+        <main className="flex-1 p-4 sm:p-6 md:p-8 overflow-y-auto z-10">
+          <div className="max-w-6xl mx-auto grid grid-cols-1 xl:grid-cols-12 gap-6 md:gap-8">
             
             {/* Left Column: Multi-User Authentication */}
-            <div className="lg:col-span-4 space-y-6">
-              <div className="bg-[#0A0A0A] border border-white/10 rounded-2xl p-6 shadow-2xl relative overflow-hidden">
+            <div className="xl:col-span-4 space-y-6">
+              <div className="bg-[#0A0A0A] border border-white/10 rounded-2xl p-5 md:p-6 shadow-2xl relative overflow-hidden">
                 <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-[#00e676] to-transparent opacity-50" />
                 
                 <h3 className="text-sm font-bold uppercase tracking-widest text-white mb-6 flex items-center gap-2">
@@ -217,47 +258,47 @@ export default function Dashboard() {
                 {error && (
                   <div className="mt-4 p-3 bg-red-500/10 border border-red-500/20 text-red-400 text-xs rounded-xl flex items-center gap-2">
                     <AlertCircle size={14} className="flex-shrink-0" />
-                    <span>{error}</span>
+                    <span className="leading-tight">{error}</span>
                   </div>
                 )}
               </div>
 
               {/* Bot Config */}
-              <div className="bg-[#0A0A0A] border border-white/10 rounded-2xl p-6 shadow-2xl">
+              <div className="bg-[#0A0A0A] border border-white/10 rounded-2xl p-5 md:p-6 shadow-2xl">
                 <h4 className="font-bold text-white mb-4 uppercase tracking-wider text-xs text-gray-400">Trading Parameters</h4>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="bg-white/5 p-4 rounded-xl border border-white/5">
+                <div className="grid grid-cols-2 gap-3 md:gap-4">
+                  <div className="bg-white/5 p-3 md:p-4 rounded-xl border border-white/5">
                     <div className="text-gray-500 font-bold text-[10px] tracking-wider mb-1">BASE STAKE</div>
-                    <div className="text-white text-lg font-mono">$1.00</div>
+                    <div className="text-white text-base md:text-lg font-mono">$1.00</div>
                   </div>
-                  <div className="bg-white/5 p-4 rounded-xl border border-white/5">
+                  <div className="bg-white/5 p-3 md:p-4 rounded-xl border border-white/5">
                     <div className="text-gray-500 font-bold text-[10px] tracking-wider mb-1">TIMEFRAME</div>
-                    <div className="text-white text-lg font-mono">1 MIN</div>
+                    <div className="text-white text-base md:text-lg font-mono">1 MIN</div>
                   </div>
                 </div>
               </div>
             </div>
 
             {/* Right Column: Execution Monitor */}
-            <div className="lg:col-span-8 space-y-6">
-              <div className="bg-[#0A0A0A] border border-white/10 rounded-2xl p-8 shadow-2xl flex flex-col justify-between min-h-[450px]">
+            <div className="xl:col-span-8 space-y-6">
+              <div className="bg-[#0A0A0A] border border-white/10 rounded-2xl p-5 md:p-8 shadow-2xl flex flex-col justify-between h-full min-h-[400px]">
                 
                 {/* Header */}
-                <div className="flex items-center justify-between border-b border-white/10 pb-6">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-white/10 pb-5 md:pb-6">
                   <div>
                     <div className="flex items-center gap-3">
-                      <span className={`w-3 h-3 rounded-full ${isBotRunning ? 'bg-[#00e676] shadow-[0_0_10px_#00e676] animate-pulse' : 'bg-red-500'}`} />
-                      <span className="text-sm font-bold uppercase tracking-widest text-white">
+                      <span className={`w-3 h-3 rounded-full shrink-0 ${isBotRunning ? 'bg-[#00e676] shadow-[0_0_10px_#00e676] animate-pulse' : 'bg-red-500'}`} />
+                      <span className="text-xs sm:text-sm font-bold uppercase tracking-widest text-white">
                         {isBotRunning ? 'Engine Active' : 'System Standby'}
                       </span>
                     </div>
-                    <p className="text-xs text-gray-500 mt-2 font-mono">{tradeStatus}</p>
+                    <p className="text-[11px] sm:text-xs text-gray-500 mt-2 font-mono break-words">{tradeStatus}</p>
                   </div>
 
                   <button
                     disabled={balance === null || isBotRunning}
                     onClick={handleToggleBot}
-                    className={`px-6 py-3 rounded-xl text-xs font-bold uppercase tracking-widest transition-all flex items-center gap-2 ${
+                    className={`w-full sm:w-auto px-6 py-3 rounded-xl text-xs font-bold uppercase tracking-widest transition-all flex items-center justify-center gap-2 ${
                       balance === null 
                         ? 'bg-white/5 text-gray-600 cursor-not-allowed border border-white/5'
                         : 'bg-white text-black hover:bg-gray-200 shadow-[0_0_20px_rgba(255,255,255,0.2)]'
@@ -272,34 +313,34 @@ export default function Dashboard() {
                 </div>
 
                 {/* Big Balance Display */}
-                <div className="py-8">
-                  <span className="text-xs text-gray-500 uppercase tracking-widest font-bold block mb-2">Available Liquidity</span>
-                  <h1 className="text-5xl md:text-7xl font-black font-mono tracking-tighter text-white">
+                <div className="py-8 md:py-10">
+                  <span className="text-[10px] md:text-xs text-gray-500 uppercase tracking-widest font-bold block mb-2">Available Liquidity</span>
+                  <h1 className="text-4xl sm:text-5xl md:text-7xl font-black font-mono tracking-tighter text-white break-words">
                     {balance !== null ? `$${balance.toLocaleString('en-US', {minimumFractionDigits: 2})}` : '$0.00'}
                   </h1>
                 </div>
 
                 {/* Live Stats Grid */}
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                  <div className="bg-white/5 p-4 rounded-xl border border-white/5">
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
+                  <div className="bg-white/5 p-3 md:p-4 rounded-xl border border-white/5">
                     <Activity size={16} className="text-[#00e676] mb-2" />
-                    <span className="block font-mono text-white text-xl font-bold">0</span>
-                    <span className="text-[10px] text-gray-500 font-bold uppercase tracking-wider">Wins</span>
+                    <span className="block font-mono text-white text-lg md:text-xl font-bold">0</span>
+                    <span className="text-[9px] md:text-[10px] text-gray-500 font-bold uppercase tracking-wider">Wins</span>
                   </div>
-                  <div className="bg-white/5 p-4 rounded-xl border border-white/5">
+                  <div className="bg-white/5 p-3 md:p-4 rounded-xl border border-white/5">
                     <Activity size={16} className="text-red-500 mb-2" />
-                    <span className="block font-mono text-white text-xl font-bold">0</span>
-                    <span className="text-[10px] text-gray-500 font-bold uppercase tracking-wider">Losses</span>
+                    <span className="block font-mono text-white text-lg md:text-xl font-bold">0</span>
+                    <span className="text-[9px] md:text-[10px] text-gray-500 font-bold uppercase tracking-wider">Losses</span>
                   </div>
-                  <div className="bg-white/5 p-4 rounded-xl border border-white/5">
+                  <div className="bg-white/5 p-3 md:p-4 rounded-xl border border-white/5">
                     <TrendingUp size={16} className="text-white mb-2" />
-                    <span className="block font-mono text-[#00e676] text-xl font-bold">+$0.00</span>
-                    <span className="text-[10px] text-gray-500 font-bold uppercase tracking-wider">Net Profit</span>
+                    <span className="block font-mono text-[#00e676] text-lg md:text-xl font-bold">+$0.00</span>
+                    <span className="text-[9px] md:text-[10px] text-gray-500 font-bold uppercase tracking-wider">Net Profit</span>
                   </div>
-                  <div className="bg-white/5 p-4 rounded-xl border border-white/5">
+                  <div className="bg-white/5 p-3 md:p-4 rounded-xl border border-white/5">
                     <Percent size={16} className="text-blue-400 mb-2" />
-                    <span className="block font-mono text-white text-xl font-bold">0.0%</span>
-                    <span className="text-[10px] text-gray-500 font-bold uppercase tracking-wider">Win Rate</span>
+                    <span className="block font-mono text-white text-lg md:text-xl font-bold">0.0%</span>
+                    <span className="text-[9px] md:text-[10px] text-gray-500 font-bold uppercase tracking-wider">Win Rate</span>
                   </div>
                 </div>
 
